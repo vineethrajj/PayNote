@@ -188,10 +188,46 @@ For **who can reach the Web app**, choose one (all set on the deployment):
 
 ---
 
+## Robustness & tests
+
+Rough human phrasing is Claude's job to parse, but the model can still hand
+back messy JSON. Every value coming back is defensively normalised and every
+value going into the sheet is re-validated server-side, so a bad parse
+degrades to "ask the human to fill it in" rather than a broken row:
+
+- **Amounts** accept `2000`, `"2,000"`, `"₹2000"`, `"rs 2000"`, `"2k"`,
+  `"1.5k"`, `"2 lakh"`, `"1 crore"` — and reject negatives/garbage (→ 0,
+  which the UI then forces the user to fill). Capped at ₹10 crore.
+- **Modes** map `gpay`/`google pay`/`g-pay` → `GPay`, `credit card`/`swipe`
+  → `Card`, `phonepe`/`upi`/`cheque`/`bank transfer` → `Other`, etc.
+- **Direction** maps `received`/`collected` → credit, `paid`/`expense` →
+  debit; anything ambiguous stays blank for the human.
+- **Model output** is unwrapped from code fences / surrounding prose, and a
+  total parse failure returns a blank card instead of erroring.
+- **The Anthropic call** retries with backoff on 429 / 5xx / network errors.
+- **The sheet write** takes a script lock (concurrent front-desk submits),
+  re-validates required fields, and is strictly append-only — including the
+  edge case where the last row is already a month header (it appends under
+  it instead of duplicating it).
+
+`tests/run_tests.js` loads the **actual `Code.gs`** into a Node VM with the
+Apps Script globals stubbed (an in-memory sheet, canned Anthropic responses)
+and runs 160+ edge-case assertions covering all of the above — including
+proof that existing rows are never mutated and the sheet only ever grows
+downward.
+
+```bash
+node tests/run_tests.js
+```
+
+No dependencies; needs only Node. These tests are for local development —
+Apps Script itself does not run them.
+
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `Code.gs` | Backend: `doGet` (serves the page), `parsePayment` (Anthropic call), `appendPayment` (append-only sheet write), `isPinRequired`/`checkPin_` (optional PIN), and read-only / sample diagnostics. |
-| `Index.html` | The single-page mobile front-end: raw-entry field, editable confirmation card, missing-field enforcement, install meta tags, embedded tooth icon. |
+| `Code.gs` | Backend: `doGet` (serves the page), `parsePayment` (Anthropic call + retries + normalisation), `appendPayment` (append-only sheet write), `isPinRequired`/`checkPin_` (optional PIN), and read-only / sample diagnostics. |
+| `Index.html` | The single-page mobile front-end: raw-entry field, editable confirmation card, missing-field enforcement, amount sanitiser, install meta tags, embedded tooth icon. |
+| `tests/run_tests.js` | Node edge-case harness that exercises the real `Code.gs` functions. |
 | `README.md` | This file. |

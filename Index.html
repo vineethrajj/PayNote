@@ -184,7 +184,7 @@
     <section id="entryCard" class="card">
       <div class="field">
         <label for="raw">Type or dictate the payment</label>
-        <textarea id="raw" autocapitalize="sentences" autocorrect="on"
+        <textarea id="raw" maxlength="600" autocapitalize="sentences" autocorrect="on"
           placeholder="e.g. Prashanth paid 2000 cash for scaling"></textarea>
       </div>
       <button class="btn-primary" id="submitBtn">Read it</button>
@@ -257,6 +257,15 @@
     var PIN = '';
     var el = function (id) { return document.getElementById(id); };
 
+    // google.script.run only exists when served by Apps Script. If the page
+    // is opened any other way, fail loudly instead of throwing on click.
+    function gsRun() {
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        return null;
+      }
+      return google.script.run;
+    }
+
     function toast(msg, kind) {
       var t = el('toast');
       t.textContent = msg;
@@ -300,9 +309,11 @@
     function doParse() {
       var raw = el('raw').value.trim();
       if (!raw) { toast('Type a payment line first.', 'error'); return; }
+      var run = gsRun();
+      if (!run) { toast('Open this from the app link, not a saved file.', 'error'); return; }
       var btn = el('submitBtn');
       setBusy(btn, true, 'Reading…');
-      google.script.run
+      run
         .withSuccessHandler(function (res) {
           setBusy(btn, false);
           fillConfirm(res);
@@ -374,9 +385,11 @@
         mode: el('fMode').value,
         notes: el('fNotes').value.trim()
       };
+      var run = gsRun();
+      if (!run) { toast('Open this from the app link, not a saved file.', 'error'); return; }
       var btn = el('confirmBtn');
       setBusy(btn, true, 'Saving…');
-      google.script.run
+      run
         .withSuccessHandler(function (res) {
           setBusy(btn, false);
           toast('Saved to ' + (res && res.month ? res.month : 'ledger') + ' ✓', 'success');
@@ -414,8 +427,22 @@
     });
     el('pinInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') el('pinBtn').click(); });
 
+    // Clean pasted/typed amounts: keep digits and a single decimal point
+    // (so "₹2,000" or "2,000.50" pasted from anywhere still works).
+    el('fAmount').addEventListener('input', function () {
+      var v = this.value.replace(/[^0-9.]/g, '');
+      var firstDot = v.indexOf('.');
+      if (firstDot > -1) {
+        v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '');
+      }
+      if (v !== this.value) this.value = v;
+      flagMissing();
+    });
+
     (function boot() {
-      google.script.run
+      var run = gsRun();
+      if (!run) return; // opened outside Apps Script; leave entry card visible
+      run
         .withSuccessHandler(function (required) {
           if (required) { hide('entryCard'); show('pinCard'); el('pinInput').focus(); }
         })

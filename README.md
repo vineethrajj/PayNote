@@ -70,11 +70,15 @@ save the script:
    `https://docs.google.com/spreadsheets/d/1IH0kwzT0UQAHkWuczVGpbv44S_gSYa-y/`
 2. **Extensions → Apps Script**. This creates a *container-bound* script that
    already has access to this spreadsheet.
-3. In the editor, create the two files from this repo (use the same names):
+3. In the editor, create these files from this repo (use the same names):
    - `Code.gs` — paste the contents of `Code.gs`.
+   - `Consolidate.gs` — **File → New → Script file**, name it `Consolidate`,
+     and paste the contents of `Consolidate.gs` (the statement-import backend;
+     it shares helpers with `Code.gs`).
    - `Index.html` — **File → New → HTML file**, name it `Index` (Apps Script
      adds the `.html`), and paste the contents of `Index.html`.
-4. Save.
+4. Save. (For Excel statement import, also enable the advanced Drive service —
+   see *Statement import & consolidation* below.)
 
 > Note: the front-end talks to the backend via `google.script.run` (not a raw
 > HTTP `POST`). Because the page is served by this same script, that is the
@@ -188,6 +192,69 @@ For **who can reach the Web app**, choose one (all set on the deployment):
 
 ---
 
+## Statement import & consolidation
+
+The **Import statements** tab lets staff upload multiple account/wallet
+statements at once (Axis, SBI, Paytm, GPay), and the app consolidates them
+into the ledger — parsing every transaction, deduplicating across the files
+**and** against what is already recorded, then appending only what is new.
+
+**Flow:** pick files → *Parse & preview* → review the new-vs-skipped preview
+→ *Append new to ledger*. Nothing is written until you tap append.
+
+**Formats**
+- **CSV / Excel** are parsed inside Apps Script using fuzzy column detection,
+  so each bank's different layout (and the metadata rows many statements put
+  above the header) is handled without hard-coding every schema.
+- **PDF** statements are sent to Claude's document API, which returns the
+  transactions as JSON that the app then normalises.
+
+**Deduplication (smart match).** Two rows are treated as the same transaction
+when they have the **same amount and direction** AND either the **same
+reference/UTR** or a **date within ±1 calendar day with a fuzzy counterparty
+match**. This catches:
+- the same UPI payment appearing in both a wallet export and its linked bank
+  statement (cross-source), and
+- a statement row that is already in the ledger (entered manually via the
+  quick-log tab, or from an earlier import) — those are skipped.
+
+Opposite-direction rows of the same amount (e.g. a bank→wallet transfer) are
+**not** merged, since they are two legs of one movement, not a duplicate.
+
+**Append ordering — important.** Imports respect the same append-only rule as
+the rest of the app: they land as a **reconciliation block at the bottom** of
+the sheet, ordered by date within the batch, with `◆ Month` headers as the
+month changes. The app **cannot** interleave historical rows back up into
+earlier months — inserting mid-sheet would shift every row below and break
+the formulas the other tabs depend on. So a July import done in September is
+correct and de-duplicated, but it sits after the existing September rows, not
+back under July. Dedup is by content (amount/direction/date/name), so this
+ordering never causes double-counting.
+
+### Extra setup for Excel (.xlsx) import
+
+Excel files are converted to a temporary Google Sheet via the **advanced
+Drive service**, which must be enabled once:
+
+1. Apps Script editor → **Services** (＋) → add **Drive API** (identifier
+   `Drive`) → **Add**.
+2. Re-deploy. (The temporary conversion file is created and deleted
+   automatically per import.)
+
+If you'd rather not enable it, **export those accounts as CSV** instead —
+CSV needs no extra service.
+
+### PDF import caveats
+
+- Runs against Claude's document API, so it is **slower and costs more** than
+  CSV/Excel, and quality depends on the PDF (clean digital statements parse
+  well; scanned/photographed ones are unreliable).
+- Apps Script has a **6-minute execution limit** and requests have size
+  limits — import a **few statements at a time**, not a year of large PDFs at
+  once.
+- **Always dry-run PDF import against the test copy first** and eyeball the
+  preview before appending — treat the model's extraction as a draft.
+
 ## Robustness & tests
 
 Rough human phrasing is Claude's job to parse, but the model can still hand
@@ -210,24 +277,34 @@ degrades to "ask the human to fill it in" rather than a broken row:
   edge case where the last row is already a month header (it appends under
   it instead of duplicating it).
 
-`tests/run_tests.js` loads the **actual `Code.gs`** into a Node VM with the
-Apps Script globals stubbed (an in-memory sheet, canned Anthropic responses)
-and runs 160+ edge-case assertions covering all of the above — including
-proof that existing rows are never mutated and the sheet only ever grows
-downward.
+Two Node harnesses load the **actual `Code.gs` and `Consolidate.gs`** into a
+VM with the Apps Script globals stubbed (an in-memory sheet, canned Anthropic
+responses) and run **241 edge-case assertions** — including proof that
+existing rows are never mutated and the sheet only ever grows downward:
+
+- `tests/run_tests.js` — the quick-log path (rough amount/mode/direction
+  parsing, messy JSON extraction, validation, month headers, retries, PIN).
+- `tests/consolidate_tests.js` — the import path (fuzzy column detection
+  across Axis/SBI/Paytm/GPay-style layouts, date/money parsing, cross-source
+  and cross-ledger dedup, append-only chronological commit, mocked PDF).
 
 ```bash
-node tests/run_tests.js
+npm test          # runs both suites
 ```
 
 No dependencies; needs only Node. These tests are for local development —
-Apps Script itself does not run them.
+Apps Script itself does not run them. Because the file-format adapters can't
+be verified here without real exports, **validate a real statement of each
+type against the test copy** before trusting import on the live ledger.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `Code.gs` | Backend: `doGet` (serves the page), `parsePayment` (Anthropic call + retries + normalisation), `appendPayment` (append-only sheet write), `isPinRequired`/`checkPin_` (optional PIN), and read-only / sample diagnostics. |
-| `Index.html` | The single-page mobile front-end: raw-entry field, editable confirmation card, missing-field enforcement, amount sanitiser, install meta tags, embedded tooth icon. |
-| `tests/run_tests.js` | Node edge-case harness that exercises the real `Code.gs` functions. |
+| `Code.gs` | Quick-log backend: `doGet` (serves the page), `parsePayment` (Anthropic call + retries + normalisation), `appendPayment` (append-only sheet write), `isPinRequired`/`checkPin_` (optional PIN), and read-only / sample diagnostics. |
+| `Consolidate.gs` | Statement-import backend: multi-format parsing (CSV/Excel/PDF), fuzzy column detection, normalisation, cross-source + cross-ledger smart dedup, and `previewConsolidation` / `commitConsolidation` (append-only batch commit). |
+| `Index.html` | The single-page mobile front-end: Log-payment tab (raw entry → editable confirmation) and Import-statements tab (file upload → preview → append), install meta tags, embedded tooth icon. |
+| `tests/run_tests.js` | Node harness for the quick-log path. |
+| `tests/consolidate_tests.js` | Node harness for the statement-import path. |
+| `package.json` | `npm test` runs both harnesses. |
 | `README.md` | This file. |

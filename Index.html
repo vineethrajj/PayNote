@@ -156,6 +156,36 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .hidden { display: none !important; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 8px; margin: 0 0 16px; }
+    .tab {
+      flex: 1; font-size: 15px; font-weight: 700; padding: 12px 8px; border-radius: 12px;
+      border: 1.5px solid var(--line); background: #fff; color: var(--muted); width: auto;
+    }
+    .tab.on { background: var(--teal); color: #fff; border-color: var(--teal); }
+
+    /* File list */
+    input[type="file"] { font-size: 15px; padding: 12px; }
+    .filelist { list-style: none; padding: 0; margin: 12px 0 0; }
+    .filelist li { font-size: 14px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
+    .filelist li .sz { color: var(--muted); flex: 0 0 auto; }
+
+    /* Import summary + preview table */
+    .summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .chip { font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 999px; background: var(--bg); color: var(--ink); }
+    .chip.ok { background: var(--credit-bg); color: var(--credit); }
+    .chip.skip { background: #fff7ed; color: #9a3412; }
+    .chip.err { background: var(--debit-bg); color: var(--debit); }
+    .tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 12px; }
+    table.preview { border-collapse: collapse; width: 100%; font-size: 13px; }
+    table.preview th, table.preview td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    table.preview th { color: var(--muted); font-weight: 700; position: sticky; top: 0; background: #fff; }
+    table.preview td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    table.preview td.cr { color: var(--credit); font-weight: 700; }
+    table.preview td.dr { color: var(--debit); font-weight: 700; }
+    .fileerr { color: var(--danger); font-size: 13px; }
+
     .amount-prefix { position: relative; }
     .amount-prefix input { padding-left: 30px; }
     .amount-prefix span { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 18px; }
@@ -179,6 +209,12 @@
       </div>
       <button class="btn-primary" id="pinBtn">Unlock</button>
     </section>
+
+    <!-- Mode switch: quick log vs. statement import -->
+    <nav id="tabs" class="tabs hidden">
+      <button type="button" id="tabLog" class="tab on">Log payment</button>
+      <button type="button" id="tabImport" class="tab">Import statements</button>
+    </nav>
 
     <!-- Step 1: raw entry -->
     <section id="entryCard" class="card">
@@ -247,6 +283,31 @@
         <button class="btn-primary" id="confirmBtn">Confirm &amp; save</button>
         <button class="btn-ghost" id="backBtn">Edit original line</button>
         <button class="btn-danger" id="cancelBtn">Cancel</button>
+      </div>
+    </section>
+
+    <!-- Import view: upload statements -> preview -> append -->
+    <section id="importCard" class="card hidden">
+      <div class="field">
+        <label for="files">Statement files</label>
+        <input id="files" type="file" multiple accept=".csv,.xls,.xlsx,.pdf,text/csv,application/pdf">
+        <p class="hint">Axis, SBI, Paytm, GPay — CSV, Excel, or PDF. Add several at once; duplicates across files and anything already in the ledger are skipped automatically.</p>
+      </div>
+      <ul id="fileList" class="filelist"></ul>
+      <button class="btn-primary" id="parseBtn" disabled>Parse &amp; preview</button>
+    </section>
+
+    <!-- Import preview -->
+    <section id="importPreview" class="card hidden">
+      <div class="confirm-head">
+        <h2>Import preview</h2>
+        <span id="newCountTag" class="tag credit">0 new</span>
+      </div>
+      <div id="importSummary" class="summary"></div>
+      <div id="previewTableWrap" class="tablewrap"></div>
+      <div class="actions">
+        <button class="btn-primary" id="appendBtn">Append new to ledger</button>
+        <button class="btn-ghost" id="importBackBtn">Choose different files</button>
       </div>
     </section>
   </div>
@@ -423,9 +484,143 @@
       var v = el('pinInput').value.trim();
       if (!v) { toast('Enter the PIN.', 'error'); return; }
       PIN = v;
-      hide('pinCard'); show('entryCard');
+      hide('pinCard'); show('tabs'); showTab('log');
     });
     el('pinInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') el('pinBtn').click(); });
+
+    // ---- Tabs: quick log vs. statement import ----
+    function showTab(which) {
+      var log = (which === 'log');
+      el('tabLog').classList.toggle('on', log);
+      el('tabImport').classList.toggle('on', !log);
+      if (log) {
+        hide('importCard'); hide('importPreview'); hide('confirmCard'); show('entryCard');
+      } else {
+        hide('entryCard'); hide('confirmCard'); hide('importPreview'); show('importCard');
+      }
+      window.scrollTo(0, 0);
+    }
+    el('tabLog').addEventListener('click', function () { showTab('log'); });
+    el('tabImport').addEventListener('click', function () { showTab('import'); });
+
+    // ---- Import: file selection ----
+    var chosenFiles = [];
+    var lastPreview = null;
+    el('files').addEventListener('change', function () {
+      chosenFiles = Array.prototype.slice.call(this.files || []);
+      renderFileList();
+    });
+    function renderFileList() {
+      var ul = el('fileList'); ul.innerHTML = '';
+      var total = 0;
+      chosenFiles.forEach(function (f) {
+        total += f.size;
+        var li = document.createElement('li');
+        var a = document.createElement('span'); a.textContent = f.name;
+        var b = document.createElement('span'); b.className = 'sz'; b.textContent = fmtSize(f.size);
+        li.appendChild(a); li.appendChild(b); ul.appendChild(li);
+      });
+      el('parseBtn').disabled = chosenFiles.length === 0;
+      if (total > 18 * 1024 * 1024) toast('That is a lot of data — try fewer or smaller files.', 'error');
+    }
+    function fmtSize(n) {
+      return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+    }
+    function readFileB64(f) {
+      return new Promise(function (res, rej) {
+        var r = new FileReader();
+        r.onload = function () {
+          var s = String(r.result || ''); var i = s.indexOf(',');
+          res({ name: f.name, mimeType: f.type || '', dataBase64: i > -1 ? s.slice(i + 1) : s });
+        };
+        r.onerror = function () { rej(new Error('Could not read ' + f.name)); };
+        r.readAsDataURL(f);
+      });
+    }
+
+    // ---- Import: parse & preview ----
+    el('parseBtn').addEventListener('click', function () {
+      var run = gsRun();
+      if (!run) { toast('Open this from the app link, not a saved file.', 'error'); return; }
+      if (!chosenFiles.length) { toast('Choose statement files first.', 'error'); return; }
+      var btn = el('parseBtn');
+      setBusy(btn, true, 'Reading files…');
+      Promise.all(chosenFiles.map(readFileB64)).then(function (payload) {
+        setBusy(btn, true, 'Parsing…');
+        run
+          .withSuccessHandler(function (res) {
+            setBusy(btn, false);
+            renderPreview(res);
+            hide('importCard'); show('importPreview'); window.scrollTo(0, 0);
+          })
+          .withFailureHandler(function (err) { setBusy(btn, false); toast(cleanErr(err), 'error'); })
+          .previewConsolidation(payload, PIN);
+      }).catch(function (e) { setBusy(btn, false); toast(cleanErr(e), 'error'); });
+    });
+
+    function renderPreview(res) {
+      lastPreview = res;
+      var n = res.newCount || 0;
+      el('newCountTag').textContent = n + ' new';
+      el('newCountTag').className = 'tag ' + (n ? 'credit' : 'debit');
+
+      var s = el('importSummary'); s.innerHTML = '';
+      addChip(s, 'ok', n + ' new');
+      addChip(s, 'skip', (res.duplicateInBatchCount || 0) + ' dup across files');
+      addChip(s, 'skip', (res.alreadyInLedgerCount || 0) + ' already in ledger');
+      addChip(s, '', (res.parsed || 0) + ' parsed');
+      (res.perFile || []).forEach(function (pf) {
+        if (pf.error) addChip(s, 'err', pf.name + ': ' + pf.error);
+        else addChip(s, '', pf.name + ' (' + pf.source + '): ' + pf.count);
+      });
+
+      var wrap = el('previewTableWrap');
+      if (!res.newTxns || !res.newTxns.length) {
+        wrap.innerHTML = '<p class="hint">No new transactions to add — everything was a duplicate or already in the ledger.</p>';
+        el('appendBtn').disabled = true;
+        return;
+      }
+      el('appendBtn').disabled = false;
+      var body = res.newTxns.map(function (t) {
+        var cls = t.direction === 'credit' ? 'cr' : 'dr';
+        var sign = t.direction === 'credit' ? 'CR' : 'DR';
+        return '<tr><td>' + esc(t.date) + '</td><td>' + esc(t.party) + '</td><td>' + esc(t.particulars) +
+          '</td><td class="num ' + cls + '">' + fmtAmt(t.amount) + ' ' + sign + '</td><td>' + esc(t.mode) +
+          '</td><td>' + esc(t.source) + '</td></tr>';
+      }).join('');
+      wrap.innerHTML = '<table class="preview"><thead><tr><th>Date</th><th>Party</th><th>Particulars</th>' +
+        '<th>Amount</th><th>Mode</th><th>Source</th></tr></thead><tbody>' + body + '</tbody></table>' +
+        (res.truncated ? '<p class="hint">Showing the first ' + res.newTxns.length + ' new rows.</p>' : '');
+    }
+    function addChip(parent, kind, text) {
+      var c = document.createElement('span'); c.className = 'chip' + (kind ? ' ' + kind : ''); c.textContent = text; parent.appendChild(c);
+    }
+    function fmtAmt(x) { return '₹' + Number(x).toLocaleString('en-IN'); }
+    function esc(str) {
+      return String(str == null ? '' : str).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      });
+    }
+
+    // ---- Import: append to ledger ----
+    el('appendBtn').addEventListener('click', function () {
+      var run = gsRun();
+      if (!run) { toast('Open this from the app link, not a saved file.', 'error'); return; }
+      if (!lastPreview || !lastPreview.newTxns || !lastPreview.newTxns.length) { toast('Nothing new to append.', 'error'); return; }
+      var btn = el('appendBtn');
+      setBusy(btn, true, 'Appending…');
+      run
+        .withSuccessHandler(function (res) {
+          setBusy(btn, false);
+          toast('Appended ' + res.appended + ' transaction' + (res.appended === 1 ? '' : 's') + ' ✓', 'success');
+          chosenFiles = []; el('files').value = ''; el('fileList').innerHTML = '';
+          el('parseBtn').disabled = true; lastPreview = null;
+          hide('importPreview'); show('importCard');
+        })
+        .withFailureHandler(function (err) { setBusy(btn, false); toast(cleanErr(err), 'error'); })
+        .commitConsolidation(lastPreview.newTxns, PIN);
+    });
+    el('importBackBtn').addEventListener('click', function () { hide('importPreview'); show('importCard'); });
 
     // Clean pasted/typed amounts: keep digits and a single decimal point
     // (so "₹2,000" or "2,000.50" pasted from anywhere still works).
@@ -442,11 +637,12 @@
     (function boot() {
       var run = gsRun();
       if (!run) return; // opened outside Apps Script; leave entry card visible
+      show('tabs');
       run
         .withSuccessHandler(function (required) {
-          if (required) { hide('entryCard'); show('pinCard'); el('pinInput').focus(); }
+          if (required) { hide('tabs'); hide('entryCard'); show('pinCard'); el('pinInput').focus(); }
         })
-        .withFailureHandler(function () { /* if this fails, entry card stays visible */ })
+        .withFailureHandler(function () { /* if this fails, log view stays visible */ })
         .isPinRequired();
     })();
   </script>

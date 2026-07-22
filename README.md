@@ -255,6 +255,63 @@ CSV needs no extra service.
 - **Always dry-run PDF import against the test copy first** and eyeball the
   preview before appending — treat the model's extraction as a draft.
 
+## Installing on iPhone & sharing via WhatsApp
+
+**There is no `.ipa` file to download and tap-install from WhatsApp.** That is
+an Apple restriction, not a limitation of this project: stock iPhones only
+install apps from the App Store, TestFlight, or ad-hoc signing that bakes in a
+specific device's UDID plus a paid Apple Developer certificate. iOS has no
+Android-style "open the file to install."
+
+The real, friction-free install path — and the one this app is built for — is
+**PWA install via Safari**:
+
+1. Open the deployed web-app link in **Safari**.
+2. **Share → Add to Home Screen → Add.**
+3. It launches full-screen from its own tooth icon, exactly like a native app
+   (the `apple-mobile-web-app-*` meta tags handle that).
+
+So the thing you send over WhatsApp is the **link**, not a file.
+
+**`install.html`** is a self-contained install page to make that easy: open
+it, paste your deployed `…/exec` URL, and it gives you a **Copy WhatsApp
+invite** button and a **Send on WhatsApp** button (a `wa.me` deep link) with a
+ready-written message that includes the link and the Add-to-Home-Screen steps.
+You can host `install.html` anywhere, or just use it locally to compose the
+invite.
+
+**`tools/make_qr.py`** generates a QR code PNG pointing at your app link — good
+for printing at the front desk or forwarding — so staff can scan with the
+iPhone Camera app and then Add to Home Screen:
+
+```bash
+python3 tools/make_qr.py "https://script.google.com/macros/s/…/exec"
+# or:  npm run qr -- "https://…/exec"
+```
+
+## Look & feel
+
+The UI is theme-aware (light **and** dark), tuned for iPhone 12: gradient
+brand header, pill tab switch, segmented direction control, gradient CTAs, a
+launch splash, and full safe-area/notch handling. It also works as a
+responsive page on Android Chrome.
+
+## Real-browser validation
+
+`tests/ui_validate.js` loads the **actual `Index.html`** in Chromium at the
+iPhone 12 viewport (390×844 @3×) with a mocked `google.script.run`, drives the
+live flows, **fails on any console/page error**, and captures light + dark
+screenshots:
+
+```bash
+npm run test:ui      # needs the bundled Chromium
+```
+
+It verifies: boot + splash auto-hide, quick-log parse → populated confirmation
+card with the right direction, tab switch, file pick enabling parse, and the
+import preview rendering the correct number of new rows. Screenshots land in
+`tests/screens/` (git-ignored; regenerate any time).
+
 ## Robustness & tests
 
 Rough human phrasing is Claude's job to parse, but the model can still hand
@@ -304,7 +361,10 @@ type against the test copy** before trusting import on the live ledger.
 | `Code.gs` | Quick-log backend: `doGet` (serves the page), `parsePayment` (Anthropic call + retries + normalisation), `appendPayment` (append-only sheet write), `isPinRequired`/`checkPin_` (optional PIN), and read-only / sample diagnostics. |
 | `Consolidate.gs` | Statement-import backend: multi-format parsing (CSV/Excel/PDF), fuzzy column detection, normalisation, cross-source + cross-ledger smart dedup, and `previewConsolidation` / `commitConsolidation` (append-only batch commit). |
 | `Index.html` | The single-page mobile front-end: Log-payment tab (raw entry → editable confirmation) and Import-statements tab (file upload → preview → append), install meta tags, embedded tooth icon. |
+| `install.html` | Self-contained install/onboarding page: iPhone Add-to-Home-Screen steps + WhatsApp invite (copy + `wa.me` share) driven by your deployed URL. |
+| `tools/make_qr.py` | Generates a QR-code PNG for the app link (print or forward). |
 | `tests/run_tests.js` | Node harness for the quick-log path. |
 | `tests/consolidate_tests.js` | Node harness for the statement-import path. |
-| `package.json` | `npm test` runs both harnesses. |
+| `tests/ui_validate.js` | Real-browser (Chromium, iPhone 12) validation with screenshots. |
+| `package.json` | `npm test` (unit), `npm run test:ui` (browser), `npm run qr`. |
 | `README.md` | This file. |

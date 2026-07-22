@@ -1,0 +1,4 @@
+node_modules/
+tests/screens/
+tools/bill-note-qr.png
+*.log

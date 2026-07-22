@@ -4,6 +4,11 @@
   "private": true,
   "description": "Joseph Dental — Bill Note: Apps Script payment logger + statement consolidation. Node scripts here run the local edge-case test harnesses only.",
   "scripts": {
-    "test": "node tests/run_tests.js && TZ=UTC node tests/consolidate_tests.js"
+    "test": "node tests/run_tests.js && TZ=UTC node tests/consolidate_tests.js",
+    "test:ui": "node tests/ui_validate.js",
+    "qr": "python3 tools/make_qr.py"
+  },
+  "devDependencies": {
+    "playwright": "^1.0.0"
   }
 }

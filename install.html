@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Install Bill Note</title>
+  <style>
+    :root{
+      --brand:#0d9488; --brand2:#10b981; --ink:#0f172a; --muted:#64748b;
+      --line:#e6ebf2; --card:#fff; --bg:#eef2f7;
+    }
+    @media (prefers-color-scheme: dark){
+      :root{ --ink:#e8eef7; --muted:#94a3b8; --line:#263349; --card:#131d2f; --bg:#0a1120; }
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    body{
+      margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      color:var(--ink);min-height:100vh;
+      background:
+        radial-gradient(1000px 500px at 100% -10%, color-mix(in srgb,var(--brand) 18%,transparent), transparent 60%),
+        radial-gradient(800px 460px at -10% 0%, color-mix(in srgb,var(--brand2) 14%,transparent), transparent 55%),
+        var(--bg);
+      padding:max(env(safe-area-inset-top),20px) 18px calc(env(safe-area-inset-bottom) + 28px);
+    }
+    .wrap{max-width:520px;margin:0 auto}
+    .hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding:14px 0 22px}
+    .badge{width:84px;height:84px;border-radius:22px;background:linear-gradient(145deg,var(--brand2),var(--brand));
+      display:flex;align-items:center;justify-content:center;box-shadow:0 16px 34px color-mix(in srgb,var(--brand) 40%,transparent)}
+    .badge img{width:52px;height:52px}
+    h1{margin:0;font-size:24px;font-weight:800;letter-spacing:-.02em}
+    .sub{margin:0;color:var(--muted);font-size:14px}
+    .card{background:var(--card);border:1px solid color-mix(in srgb,var(--line) 70%,transparent);
+      border-radius:20px;padding:20px 18px;margin-bottom:16px;box-shadow:0 6px 20px rgba(15,23,42,.07)}
+    .card h2{margin:0 0 14px;font-size:16px;font-weight:800}
+    ol{margin:0;padding-left:20px}
+    li{margin:0 0 12px;line-height:1.5;font-size:15px}
+    .ico{display:inline-flex;vertical-align:-5px;width:22px;height:22px;margin:0 2px;
+      align-items:center;justify-content:center;border:1.5px solid var(--muted);border-radius:6px;color:var(--muted)}
+    label{display:block;font-size:13px;font-weight:700;color:var(--muted);margin:0 0 7px}
+    input{width:100%;font-size:16px;font-family:inherit;color:var(--ink);background:var(--bg);
+      border:1.5px solid var(--line);border-radius:12px;padding:14px;outline:none;-webkit-appearance:none}
+    input:focus{border-color:var(--brand)}
+    .btn{display:block;width:100%;text-align:center;text-decoration:none;font-size:16px;font-weight:800;
+      border:none;border-radius:14px;padding:16px;margin-top:12px;cursor:pointer}
+    .btn.wa{background:#25D366;color:#04310f}
+    .btn.copy{background:linear-gradient(145deg,var(--brand2),var(--brand));color:#fff}
+    .btn:disabled,.btn.disabled{opacity:.5;pointer-events:none}
+    .qr{margin:16px auto 0;width:220px;height:220px;display:none;background:#fff;border-radius:14px;padding:12px}
+    .qr img{width:100%;height:100%;image-rendering:pixelated}
+    .note{font-size:12.5px;color:var(--muted);line-height:1.5;margin-top:10px}
+    .foot{text-align:center;color:var(--muted);font-size:12px;margin-top:6px}
+    code{background:color-mix(in srgb,var(--ink) 8%,transparent);padding:2px 6px;border-radius:6px;font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="badge"><img src="data:image/png;base64,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" alt=""></div>
+      <h1>Bill Note</h1>
+      <p class="sub">Joseph Dental &amp; Aesthetic Wellness</p>
+    </div>
+
+    <div class="card">
+      <h2>Add to your iPhone (30 seconds)</h2>
+      <ol>
+        <li>Open the app link in <b>Safari</b> (it must be Safari, not Chrome).</li>
+        <li>Tap the <span class="ico">&#x2191;</span> <b>Share</b> button at the bottom.</li>
+        <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
+        <li>Tap <b>Add</b>. The tooth icon appears on your home screen — open it and it runs full-screen, like a normal app.</li>
+      </ol>
+      <p class="note">Android: open the link in Chrome → menu (⋮) → <b>Install app / Add to Home screen</b>.</p>
+    </div>
+
+    <div class="card">
+      <h2>Share it with staff on WhatsApp</h2>
+      <label for="url">Paste your deployed web-app link</label>
+      <input id="url" type="url" inputmode="url" placeholder="https://script.google.com/…/exec" autocomplete="off">
+      <button class="btn copy disabled" id="copyBtn" disabled>Copy WhatsApp invite</button>
+      <a class="btn wa disabled" id="waBtn" aria-disabled="true">Send on WhatsApp</a>
+      <div class="qr" id="qrBox"><img id="qrImg" alt="QR to the app"></div>
+      <p class="note">The invite message includes the link and the install steps above, so whoever receives it can set it up themselves. (You can’t send an iPhone app as a file — iOS only installs from a link, so this is the real install path.)</p>
+    </div>
+
+    <p class="foot">This page installs nothing by itself — it just hands your staff the link and the steps.</p>
+  </div>
+
+  <script>
+    var url = document.getElementById('url');
+    var copyBtn = document.getElementById('copyBtn');
+    var waBtn = document.getElementById('waBtn');
+    var qrBox = document.getElementById('qrBox');
+    var qrImg = document.getElementById('qrImg');
+
+    function invite(link){
+      return 'Bill Note — our payment logger for the clinic.\n\n' +
+        'Open this on your iPhone in Safari:\n' + link + '\n\n' +
+        'Then tap Share (the box with the up-arrow) → Add to Home Screen → Add. ' +
+        'It becomes an app icon you can open full-screen.';
+    }
+    function valid(v){ return /^https?:\/\/\S+$/i.test(v); }
+
+    url.addEventListener('input', function(){
+      var v = url.value.trim();
+      var ok = valid(v);
+      copyBtn.disabled = !ok; copyBtn.classList.toggle('disabled', !ok);
+      waBtn.classList.toggle('disabled', !ok);
+      if(ok){
+        waBtn.setAttribute('href', 'https://wa.me/?text=' + encodeURIComponent(invite(v)));
+        waBtn.removeAttribute('aria-disabled');
+        // Free, self-contained QR via an inline SVG data-URI is not feasible
+        // without a library; hide QR unless a generator is present.
+        qrBox.style.display = 'none';
+      } else {
+        waBtn.removeAttribute('href'); waBtn.setAttribute('aria-disabled','true');
+        qrBox.style.display = 'none';
+      }
+    });
+
+    copyBtn.addEventListener('click', function(){
+      var msg = invite(url.value.trim());
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(msg).then(function(){
+          copyBtn.textContent = 'Copied ✓'; setTimeout(function(){ copyBtn.textContent = 'Copy WhatsApp invite'; }, 1600);
+        });
+      } else {
+        var t = document.createElement('textarea'); t.value = msg; document.body.appendChild(t); t.select();
+        try{ document.execCommand('copy'); copyBtn.textContent='Copied ✓'; setTimeout(function(){copyBtn.textContent='Copy WhatsApp invite';},1600);}catch(e){}
+        document.body.removeChild(t);
+      }
+    });
+  </script>
+</body>
+</html>

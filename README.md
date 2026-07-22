@@ -289,6 +289,47 @@ python3 tools/make_qr.py "https://script.google.com/macros/s/…/exec"
 # or:  npm run qr -- "https://…/exec"
 ```
 
+## Android: a real installable APK
+
+Unlike iOS, Android **can** install an app from a file. `android/BillNote.apk`
+is a signed, sideloadable app you can send over WhatsApp and tap to install:
+
+1. Send `BillNote.apk` to the phone (WhatsApp, email, or a cable).
+2. Tap it. Android asks to **allow installing unknown apps** for WhatsApp/Files
+   the first time — allow it, then **Install**.
+3. Open **Bill Note**. On first launch it asks for the clinic's app link —
+   paste your deployed `…/exec` URL once (saved on the device). It then loads
+   the app full-screen every time. Change it later from the ⋮ menu → *Change
+   app link*.
+
+**Why a WebView shell, not a PWA:** Apps Script serves its web apps inside a
+sandboxed iframe, which blocks a true Android PWA/WebAPK install. This shell
+(`android/app/…/MainActivity.java`, ~200 lines, framework APIs only — no
+AndroidX) loads the same live web app, wires up `<input type="file">` so the
+statement-import picker works, handles the back button, and installs like any
+normal app. The deployed URL is **not** hard-coded, so one APK works for any
+deployment.
+
+**Rebuild it yourself** (e.g. after changing the app, or to sign with your own
+key) — needs a JDK and an Android SDK with `platforms;android-34` and
+`build-tools;35.0.0`:
+
+```bash
+ANDROID_SDK_ROOT=/path/to/sdk bash android/build.sh
+# -> android/BillNote.apk  (debug-signed; fine for sideloading)
+```
+
+`android/build.sh` runs the toolchain directly (aapt2 → javac → d8 → zipalign →
+apksigner); no Gradle/Android Studio required. The shipped APK is **debug-key
+signed**, which is all that sideloading needs — for Play Store distribution
+you'd re-sign with a release key.
+
+> The APK is a thin shell: all the app logic and every test in this repo cover
+> the web app it loads. I verified the APK's structure (manifest, permissions,
+> launcher icon, dex classes, and v1/v2/v3 signatures) but could not boot an
+> Android emulator in the build environment, so do a quick real-device smoke
+> test after installing.
+
 ## Look & feel
 
 The UI is theme-aware (light **and** dark), tuned for iPhone 12: gradient
@@ -362,6 +403,7 @@ type against the test copy** before trusting import on the live ledger.
 | `Consolidate.gs` | Statement-import backend: multi-format parsing (CSV/Excel/PDF), fuzzy column detection, normalisation, cross-source + cross-ledger smart dedup, and `previewConsolidation` / `commitConsolidation` (append-only batch commit). |
 | `Index.html` | The single-page mobile front-end: Log-payment tab (raw entry → editable confirmation) and Import-statements tab (file upload → preview → append), install meta tags, embedded tooth icon. |
 | `install.html` | Self-contained install/onboarding page: iPhone Add-to-Home-Screen steps + WhatsApp invite (copy + `wa.me` share) driven by your deployed URL. |
+| `android/` | Sideloadable Android app: `BillNote.apk` (prebuilt, signed), the WebView shell source, and `build.sh` to rebuild it. |
 | `tools/make_qr.py` | Generates a QR-code PNG for the app link (print or forward). |
 | `tests/run_tests.js` | Node harness for the quick-log path. |
 | `tests/consolidate_tests.js` | Node harness for the statement-import path. |
